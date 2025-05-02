@@ -7,6 +7,6 @@
 ../Core/Src/stm32f4xx_it.c:159:6:DebugMon_Handler	1
 ../Core/Src/stm32f4xx_it.c:172:6:PendSV_Handler	1
 ../Core/Src/stm32f4xx_it.c:185:6:SysTick_Handler	7
-../Core/Src/stm32f4xx_it.c:243:6:RTC_Alarm_IRQHandler	1
-../Core/Src/stm32f4xx_it.c:260:6:TIM7_IRQHandler	16
-../Core/Src/stm32f4xx_it.c:343:6:OTG_FS_IRQHandler	1
+../Core/Src/stm32f4xx_it.c:243:6:RTC_Alarm_IRQHandler	3
+../Core/Src/stm32f4xx_it.c:277:6:TIM7_IRQHandler	16
+../Core/Src/stm32f4xx_it.c:360:6:OTG_FS_IRQHandler	1

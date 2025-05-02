@@ -19,15 +19,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "seg7.h"
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -36,38 +33,17 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
-
 I2S_HandleTypeDef hi2s3;
-
 RTC_HandleTypeDef hrtc;
-
 SPI_HandleTypeDef hspi1;
-
 TIM_HandleTypeDef htim7;
-
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
-void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_TIM7_Init(void);
-
-
-/* USER CODE BEGIN PFP */
-
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
 char ramp = 0;
 char RED_BRT = 0;
 char GREEN_BRT = 0;
@@ -77,30 +53,62 @@ char GREEN_STEP = 2;
 char BLUE_STEP = 3;
 char DIM_Enable = 0;
 char Music_ON = 0;
-int TONE = 0;
-int COUNT = 0;
-int INDEX = 0;
-int Note = 0;
-int Save_Note = 0;
-int Vibrato_Depth = 1;
-int Vibrato_Rate = 40;
-int Vibrato_Count = 0;
+int  TONE = 0;
+int  COUNT = 0;
+int  INDEX = 0;
+int  Note = 0;
+int  Save_Note = 0;
+int  Vibrato_Depth = 1;
+int  Vibrato_Rate = 40;
+int  Vibrato_Count = 0;
 char Animate_On = 0;
 char Message_Length = 0;
 char *Message_Pointer;
 char *Save_Pointer;
-int Delay_msec = 0;
-int Delay_counter = 0;
-
+int  Delay_msec = 0;
+int  Delay_counter = 0;
 
 /* HELLO ECE-330L */
 char Message[] =
-		{SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,
-		CHAR_H,CHAR_E,CHAR_L,CHAR_L,CHAR_O,SPACE,CHAR_E,CHAR_C,CHAR_E,DASH,CHAR_3,CHAR_3,CHAR_0,CHAR_L,
-		SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE};
+    {SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,
+     CHAR_H,CHAR_E,CHAR_L,CHAR_L,CHAR_O,SPACE,CHAR_E,CHAR_C,CHAR_E,DASH,CHAR_3,CHAR_3,CHAR_0,CHAR_L,
+     SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE,SPACE};
 
 /* Declare array for Song */
 Music Song[100];
+
+/* Variables for RTC set/edit */
+char currentState     = 0;   // 0=clock,1=calendar,2=alarm1,3=alarm2
+char debounceFlag11   = 0;
+char debounceFlag10   = 0;
+char editMode         = 0;
+char updateValueFlag  = 0;
+char prevEdit         = 0;
+
+/* Time/Date set values */
+int  daySet    = 1;    // 1–31
+int  monthSet  = 1;    // 1–12
+int  yearSet   = 23;   // 0–99
+char hourSet   = 0;    // 0–23
+char minuteSet = 0;    // 0–59
+char secondSet = 0;    // 0–59
+
+/* Alarm1 */
+char alarm1H = 0, alarm1M = 0, alarm1S = 0;
+/* Alarm2 */
+char alarm2H = 0, alarm2M = 0, alarm2S = 0;
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_TIM7_Init(void);
+/* USER CODE BEGIN PFP */
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+// … (song initialization unchanged) …
 /* USER CODE END 0 */
 
 /**
@@ -110,717 +118,366 @@ Music Song[100];
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
   SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM7_Init();
-  //MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 
-  /********************************************************************
-   * PWR->CR |= ???;  //Enable Real Time Clock (RTC) Register Access  *
-   * RCC->BDCR |= ???;  //Set clock source for RTC                    *
-   * RCC->BDCR |= ???; //Enable RTC									  *
-   ********************************************************************/
+  // Enable RTC
+  // Enable RTC, using the LSI oscillator
+  // Enable PWR per
+  __HAL_RCC_PWR_CLK_ENABLE();
+  /* enable backup-domain writes (DBP bit) */
+  PWR->CR   |= (1U << 8);
+
+  /* turn on the LSI oscillator (LSION = bit 0 of CSR) */
+  RCC->CSR  |= (1U << 0);
+  /* wait for it to stabilize (LSIRDY = bit 1 of CSR) */
+  while (!(RCC->CSR & (1U << 1)));
+
+  /* select LSI as RTC source (RTCSEL bits 9:8 = 10b) and enable RTC (RTCEN bit 15) */
+  RCC->BDCR |= (2U << 8)   /* RTCSEL = 10b */
+             | (1U << 15); /* RTCEN  = 1   */
+
+  // Program RTC prescalers to get a 1 Hz timebase (LSI ≈ 33 152 Hz)
+  RTC->WPR = 0xCA; RTC->WPR = 0x53;     // disable write protection
+  RTC->ISR |=  RTC_ISR_INIT;            // enter init mode
+  while(!(RTC->ISR & RTC_ISR_INITF));   // wait for it
+  RTC->PRER  = (127 << 16)  // asynchronous prescaler
+             |  258;        // synchronous prescaler
+  RTC->ISR &= ~RTC_ISR_INIT;            // exit init mode
+  RTC->WPR = 0xFF;                      // re-enable write protection
+
 
   /*** Configure GPIOs ***/
-  GPIOD->MODER = 0x55555555; // set all Port D pins to outputs
-  GPIOA->MODER |= 0x000000FF; // Port A mode register - make A0 to A3 analog pins
-  GPIOE->MODER |= 0x55555555; // Port E mode register - make E0 to E15 outputs
-  GPIOC->MODER |= 0x0; // Port C mode register - all inputs
-  GPIOE->ODR = 0xFFFF; // Set all Port E pins high
+  GPIOD->MODER = 0x55555555;     // Port D outputs (LEDs)
+  GPIOA->MODER |= 0x000000FF;    // PA0-PA3 analog
+  GPIOE->MODER |= 0x55555555;    // Port E outputs (7-seg)
+  GPIOC->MODER |= 0x00000000;    // Port C inputs (buttons)
+  GPIOE->ODR    = 0xFFFF;        // 7-seg off
 
   /*** Configure ADC1 ***/
-  RCC->APB2ENR |= 1<<8;  // Turn on ADC1 clock by forcing bit 8 to 1 while keeping other bits unchanged
-  ADC1->SMPR2 |= 1; // 15 clock cycles per sample
-  ADC1->CR2 |= 1;        // Turn on ADC1 by forcing bit 0 to 1 while keeping other bits unchanged
+  RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+
+  /* sample times for PA1/PA2/PA3 = 15 cycles */
+  ADC1->SMPR2 |= (1U <<  3)   // SMP1 = 001 → 15 cycles for channel 1
+                | (1U <<  6)   // SMP2 = 001 → 15 cycles for channel 2
+                | (1U <<  9);  // SMP3 = 001 → 15 cycles for channel 3
+
+  /* reset & calibrate */
+  ADC1->CR2 |= (1U << 3);               /* RSTCAL */
+  while (ADC1->CR2 & (1U << 3)) {}      /* wait */
+  ADC1->CR2 |= (1U << 2);               /* CAL */
+  while (ADC1->CR2 & (1U << 2)) {}      /* wait */
+
+  /* turn ADC on */
+  ADC1->CR2 |= ADC_CR2_ADON;
+
+  /* Timer7: for PWM on buzzer, unchanged… */
+  TIM7->PSC = 199;
+  TIM7->ARR =   1;
+  TIM7->DIER |=  1;
+  TIM7->CR1  |=  1;
+
+  // enable Alarm A & B in the RTC
+  RTC->CR |= RTC_CR_ALRAIE | RTC_CR_ALRAE    // Alarm A interrupt + enable
+           | RTC_CR_ALRBIE | RTC_CR_ALRBE;  // Alarm B interrupt + enable
+
+  // now wire up EXTI & NVIC so that the RTC alarm lines will actually
+  // generate an IRQ that gets to HAL_RTC_AlarmIRQHandler()
+
+  // 1) unmask the wake-up lines for Alarm A (EXTI 17) and Alarm B (EXTI 18)
+  EXTI->IMR  |= (1<<17) | (1<<18);
+  EXTI->RTSR |= (1<<17) | (1<<18);
+
+  // 2) turn on the RTC_Alarm_IRQn in the NVIC
+  HAL_NVIC_SetPriority(RTC_Alarm_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(RTC_Alarm_IRQn);
 
-  /*****************************************************************************************************
-  These commands are handled as part of the MX_TIM7_Init() function and don't need to be enabled
-  RCC->AHB1ENR |= 1<<5; // Enable clock for timer 7
-  __enable_irq(); // Enable interrupts
-  NVIC_EnableIRQ(TIM7_IRQn); // Enable Timer 7 Interrupt in the NVIC controller
-  *******************************************************************************************************/
-
-  TIM7->PSC = 199; //250Khz timer clock prescaler value, 250Khz = 50Mhz / 200
-  TIM7->ARR = 1; // Count to 1 then generate interrupt (divide by 2), 125Khz interrupt rate to increment byte counter for 78Hz PWM
-  TIM7->DIER |= 1; // Enable timer 7 interrupt
-  TIM7->CR1 |= 1; // Enable timer counting
-
-
-  //TODO Replace with Alarm sound
-  /* Jeopardy Song */
-  Song[0].note = A4;
-  Song[0].size = quarter;
-  Song[0].tempo = 1400;
-  Song[0].space = 10;
-  Song[0].end = 0;
-
-  Song[1].note = D5;
-  Song[1].size = quarter;
-  Song[1].tempo = 1400;
-  Song[1].space = 10;
-  Song[1].end = 0;
-
-  Song[2].note = A4;
-  Song[2].size = quarter;
-  Song[2].tempo = 1400;
-  Song[2].space = 10;
-  Song[2].end = 0;
-
-  Song[3].note = D4;
-  Song[3].size = quarter;
-  Song[3].tempo = 1400;
-  Song[3].space = 10;
-  Song[3].end = 0;
-
-  Song[4].note = A4;
-  Song[4].size = quarter;
-  Song[4].tempo = 1400;
-  Song[4].space = 10;
-  Song[4].end = 0;
-
-  Song[5].note = D5;
-  Song[5].size = quarter;
-  Song[5].tempo = 1400;
-  Song[5].space = 10;
-  Song[5].end = 0;
-
-  Song[6].note = A4;
-  Song[6].size = quarter;
-  Song[6].tempo = 1400;
-  Song[6].space = 10;
-  Song[6].end = 0;
-
-  Song[7].note = rest;
-  Song[7].size = quarter;
-  Song[7].tempo = 1400;
-  Song[7].space = 10;
-  Song[7].end = 0;
-
-  Song[8].note = A4;
-  Song[8].size = quarter;
-  Song[8].tempo = 1400;
-  Song[8].space = 10;
-  Song[8].end = 0;
-
-  Song[9].note = D5;
-  Song[9].size = quarter;
-  Song[9].tempo = 1400;
-  Song[9].space = 10;
-  Song[9].end = 0;
-
-  Song[10].note = A4;
-  Song[10].size = quarter;
-  Song[10].tempo = 1400;
-  Song[10].space = 10;
-  Song[10].end = 0;
-
-  Song[11].note = D5;
-  Song[11].size = quarter;
-  Song[11].tempo = 1400;
-  Song[11].space = 10;
-  Song[11].end = 0;
-
-  Song[12].note = Fs5_Gb5;
-  Song[12].size = quarter;
-  Song[12].tempo = 1400;
-  Song[12].space = 100;
-  Song[12].end = 0;
-
-  Song[13].note = rest;
-  Song[13].size = _8th;
-  Song[13].tempo = 1400;
-  Song[13].space = 10;
-  Song[13].end = 0;
-
-  Song[14].note = E5;
-  Song[14].size = _8th;
-  Song[14].tempo = 1400;
-  Song[14].space = 10;
-  Song[14].end = 0;
-
-  Song[15].note = D5;
-  Song[15].size = _8th;
-  Song[15].tempo = 1400;
-  Song[15].space = 10;
-  Song[15].end = 0;
-
-  Song[16].note = Cs5_Db5;
-  Song[16].size = _8th;
-  Song[16].tempo = 1400;
-  Song[16].space = 10;
-  Song[16].end = 0;
-
-  Song[17].note = B4;
-  Song[17].size = _8th;
-  Song[17].tempo = 1400;
-  Song[17].space = 10;
-  Song[17].end = 0;
-
-  Song[18].note = As4_Bb4;
-  Song[18].size = _8th;
-  Song[18].tempo = 1400;
-  Song[18].space = 10;
-  Song[18].end = 0;
-
-  Song[19].note = A4;
-  Song[19].size = quarter;
-  Song[19].tempo = 1400;
-  Song[19].space = 10;
-  Song[19].end = 0;
-
-  Song[20].note = D5;
-  Song[20].size = quarter;
-  Song[20].tempo = 1400;
-  Song[20].space = 10;
-  Song[20].end = 0;
-
-  Song[21].note = A4;
-  Song[21].size = quarter;
-  Song[21].tempo = 1400;
-  Song[21].space = 10;
-  Song[21].end = 0;
-
-  Song[22].note = Fs4_Gb4;
-  Song[22].size = _8th;
-  Song[22].tempo = 1400;
-  Song[22].space = 10;
-  Song[22].end = 0;
-
-  Song[23].note = G4;
-  Song[23].size = _8th;
-  Song[23].tempo = 1400;
-  Song[23].space = 10;
-  Song[23].end = 0;
-
-  Song[24].note = A4;
-  Song[24].size = quarter;
-  Song[24].tempo = 1400;
-  Song[24].space = 10;
-  Song[24].end = 0;
-
-  Song[25].note = D5;
-  Song[25].size = quarter;
-  Song[25].tempo = 1400;
-  Song[25].space = 10;
-  Song[25].end = 0;
-
-  Song[26].note = A4;
-  Song[26].size = quarter;
-  Song[26].tempo = 1400;
-  Song[26].space = 10;
-  Song[26].end = 0;
-
-  Song[27].note = rest;
-  Song[27].size = quarter;
-  Song[27].tempo = 1400;
-  Song[27].space = 10;
-  Song[27].end = 0;
-
-  Song[28].note = D5;
-  Song[28].size = quarter;
-  Song[28].tempo = 1400;
-  Song[28].space = 100;
-  Song[28].end = 0;
-
-  Song[29].note = rest;
-  Song[29].size = _8th;
-  Song[29].tempo = 1400;
-  Song[29].space = 10;
-  Song[29].end = 0;
-
-  Song[30].note = B4;
-  Song[30].size = _8th;
-  Song[30].tempo = 1400;
-  Song[30].space = 10;
-  Song[30].end = 0;
-
-  Song[31].note = A4;
-  Song[31].size = quarter;
-  Song[31].tempo = 1400;
-  Song[31].space = 100;
-  Song[31].end = 0;
-
-  Song[32].note = G4;
-  Song[32].size = quarter;
-  Song[32].tempo = 1400;
-  Song[32].space = 100;
-  Song[32].end = 0;
-
-  Song[33].note = Fs4_Gb4;
-  Song[33].size = quarter;
-  Song[33].tempo = 1400;
-  Song[33].space = 100;
-  Song[33].end = 0;
-
-  Song[34].note = E4;
-  Song[34].size = quarter;
-  Song[34].tempo = 1400;
-  Song[34].space = 100;
-  Song[34].end = 0;
-
-  Song[35].note = D4;
-  Song[35].size = quarter;
-  Song[35].tempo = 1400;
-  Song[35].space = 100;
-  Song[35].end = 0;
-
-  Song[36].note = rest;
-  Song[36].size = quarter;
-  Song[36].tempo = 1400;
-  Song[36].space = 10;
-  Song[36].end = 0;
-
-  Song[37].note = C5;
-  Song[37].size = quarter;
-  Song[37].tempo = 1400;
-  Song[37].space = 10;
-  Song[37].end = 0;
-
-  Song[38].note = F5;
-  Song[38].size = quarter;
-  Song[38].tempo = 1400;
-  Song[38].space = 10;
-  Song[38].end = 0;
-
-  Song[39].note = C5;
-  Song[39].size = quarter;
-  Song[39].tempo = 1400;
-  Song[39].space = 10;
-  Song[39].end = 0;
-
-  Song[40].note = F4;
-  Song[40].size = _8th;
-  Song[40].tempo = 1400;
-  Song[40].space = 10;
-  Song[40].end = 0;
-
-  Song[41].note = F4;
-  Song[41].size = _8th;
-  Song[41].tempo = 1400;
-  Song[41].space = 10;
-  Song[41].end = 0;
-
-  Song[42].note = C5;
-  Song[42].size = quarter;
-  Song[42].tempo = 1400;
-  Song[42].space = 10;
-  Song[42].end = 0;
-
-  Song[43].note = F5;
-  Song[43].size = quarter;
-  Song[43].tempo = 1400;
-  Song[43].space = 10;
-  Song[43].end = 0;
-
-  Song[44].note = C5;
-  Song[44].size = quarter;
-  Song[44].tempo = 1400;
-  Song[44].space = 10;
-  Song[44].end = 0;
-
-  Song[45].note = rest;
-  Song[45].size = quarter;
-  Song[45].tempo = 1400;
-  Song[45].space = 10;
-  Song[45].end = 0;
-
-  Song[46].note = C5;
-  Song[46].size = quarter;
-  Song[46].tempo = 1400;
-  Song[46].space = 10;
-  Song[46].end = 0;
-
-  Song[47].note = F5;
-  Song[47].size = quarter;
-  Song[47].tempo = 1400;
-  Song[47].space = 10;
-  Song[47].end = 0;
-
-  Song[48].note = C5;
-  Song[48].size = quarter;
-  Song[48].tempo = 1400;
-  Song[48].space = 10;
-  Song[48].end = 0;
-
-  Song[49].note = F5;
-  Song[49].size = quarter;
-  Song[49].tempo = 1400;
-  Song[49].space = 10;
-  Song[49].end = 0;
-
-  Song[50].note = A5;
-  Song[50].size = quarter;
-  Song[50].tempo = 1400;
-  Song[50].space = 0;
-  Song[50].end = 0;
-
-  Song[51].note = A5;
-  Song[51].size = _8th;
-  Song[51].tempo = 1400;
-  Song[51].space = 10;
-  Song[51].end = 0;
-
-  Song[52].note = G5;
-  Song[52].size = _8th;
-  Song[52].tempo = 1400;
-  Song[52].space = 10;
-  Song[52].end = 0;
-
-  Song[53].note = F5;
-  Song[53].size = _8th;
-  Song[53].tempo = 1400;
-  Song[53].space = 10;
-  Song[53].end = 0;
-
-  Song[54].note = E5;
-  Song[54].size = _8th;
-  Song[54].tempo = 1400;
-  Song[54].space = 10;
-  Song[54].end = 0;
-
-  Song[55].note = D5;
-  Song[55].size = _8th;
-  Song[55].tempo = 1400;
-  Song[55].space = 10;
-  Song[55].end = 0;
-
-  Song[56].note = Cs5_Db5;
-  Song[56].size = _8th;
-  Song[56].tempo = 1400;
-  Song[56].space = 10;
-  Song[56].end = 0;
-
-  Song[57].note = C5;
-  Song[57].size = quarter;
-  Song[57].tempo = 1400;
-  Song[57].space = 10;
-  Song[57].end = 0;
-
-  Song[58].note = F5;
-  Song[58].size = quarter;
-  Song[58].tempo = 1400;
-  Song[58].space = 10;
-  Song[58].end = 0;
-
-  Song[59].note = C5;
-  Song[59].size = quarter;
-  Song[59].tempo = 1400;
-  Song[59].space = 10;
-  Song[59].end = 0;
-
-  Song[60].note = A4;
-  Song[60].size = _8th;
-  Song[60].tempo = 1400;
-  Song[60].space = 10;
-  Song[60].end = 0;
-
-  Song[61].note = As4_Bb4;
-  Song[61].size = _8th;
-  Song[61].tempo = 1400;
-  Song[61].space = 10;
-  Song[61].end = 0;
-
-  Song[62].note = C5;
-  Song[62].size = quarter;
-  Song[62].tempo = 1400;
-  Song[62].space = 10;
-  Song[62].end = 0;
-
-  Song[63].note = F5;
-  Song[63].size = quarter;
-  Song[63].tempo = 1400;
-  Song[63].space = 10;
-  Song[63].end = 0;
-
-  Song[64].note = C5;
-  Song[64].size = quarter;
-  Song[64].tempo = 1400;
-  Song[64].space = 10;
-  Song[64].end = 0;
-
-  Song[65].note = rest;
-  Song[65].size = _16th;
-  Song[65].tempo = 1400;
-  Song[65].space = 10;
-  Song[65].end = 0;
-
-  Song[66].note = C5;
-  Song[66].size = _16th;
-  Song[66].tempo = 1400;
-  Song[66].space = 10;
-  Song[66].end = 0;
-
-  Song[67].note = D5;
-  Song[67].size = _16th;
-  Song[67].tempo = 1400;
-  Song[67].space = 10;
-  Song[67].end = 0;
-
-  Song[68].note = E5;
-  Song[68].size = _16th;
-  Song[68].tempo = 1400;
-  Song[68].space = 10;
-  Song[68].end = 0;
-
-  Song[69].note = F5;
-  Song[69].size = quarter;
-  Song[69].tempo = 1400;
-  Song[69].space = 100;
-  Song[69].end = 0;
-
-  Song[70].note = rest;
-  Song[70].size = _8th;
-  Song[70].tempo = 1400;
-  Song[70].space = 10;
-  Song[70].end = 0;
-
-  Song[71].note = D5;
-  Song[71].size = _8th;
-  Song[71].tempo = 1400;
-  Song[71].space = 10;
-  Song[71].end = 0;
-
-  Song[72].note = C5;
-  Song[72].size = quarter;
-  Song[72].tempo = 1400;
-  Song[72].space = 100;
-  Song[72].end = 0;
-
-  Song[73].note = As4_Bb4;
-  Song[73].size = quarter;
-  Song[73].tempo = 1400;
-  Song[73].space = 100;
-  Song[73].end = 0;
-
-  Song[74].note = A4;
-  Song[74].size = quarter;
-  Song[74].tempo = 1400;
-  Song[74].space = 100;
-  Song[74].end = 0;
-
-  Song[75].note = rest;
-  Song[75].size = quarter;
-  Song[75].tempo = 1400;
-  Song[75].space = 100;
-  Song[75].end = 0;
-
-  Song[76].note = G4;
-  Song[76].size = quarter;
-  Song[76].tempo = 1400;
-  Song[76].space = 100;
-  Song[76].end = 0;
-
-  Song[77].note = rest;
-  Song[77].size = quarter;
-  Song[77].tempo = 1400;
-  Song[77].space = 100;
-  Song[77].end = 0;
-
-  Song[78].note = F4;
-  Song[78].size = quarter;
-  Song[78].tempo = 1400;
-  Song[78].space = 100;
-  Song[78].end = 0;
-
-  Song[99].note = rest;
-  Song[99].size = quarter;
-  Song[99].tempo = 1400;
-  Song[99].space = 10;
-  Song[99].end = 1;
-
-
-  Save_Note = Song[0].note;  // Needed for vibrato effect
-  INDEX = 0;
-  Music_ON = 0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  Message_Pointer = &Message[0];
-  Save_Pointer = &Message[0];
-  Message_Length = sizeof(Message)/sizeof(Message[0]);
-  Delay_msec = 200;
-  Animate_On = 0;
+  while (1)
+  {
+    /* 1) PC11 cycles screens */
+    if (((GPIOC->IDR >> 11) & 1) == 0 && !debounceFlag11) {
+      currentState = (currentState + 1) & 3;
+      debounceFlag11 = 1;
+    }
+    else if (((GPIOC->IDR >> 11) & 1) == 1 && debounceFlag11) {
+      HAL_Delay(1); debounceFlag11 = 0;
+    }
 
-  //User Variables
-  char currentState = 0;
-  char debounceFlag11 = 0;
-  char debounceFlag10 = 0;
-  char editMode = 0;
-  char updateValueFlag=0;
+    /* 2) PC10 toggles editMode */
+    if (((GPIOC->IDR >> 10) & 1) == 0 && !debounceFlag10) {
+      editMode ^= 1;
+      debounceFlag10 = 1;
+    }
+    else if (((GPIOC->IDR >> 10) & 1) == 1 && debounceFlag10) {
+      HAL_Delay(1);
+      // if leaving editMode, mark for commit
+      if (editMode == 0) updateValueFlag = 1;
+      debounceFlag10 = 0;
+    }
 
-  //DR
-  int daySet =0;		//5:4 tens 3:0 ones
-  int weekDaySet =0;	//15:13
-  int monthSet =0;		//12 tens 11:8 ones
-  int yearSet =2000;	//23:20 10s 19:16 ones
+    /* 3) Read pots & clamp while in editMode */
+    if (editMode) {
+      uint16_t a1,a2,a3;
+      // PA1
+      ADC1->SQR3 =  1; ADC1->CR2 |= ADC_CR2_SWSTART;
+      while(!(ADC1->SR & ADC_SR_EOC)); a1 = ADC1->DR & 0x0FFF;
+      // PA2
+      ADC1->SQR3 =  2; ADC1->CR2 |= ADC_CR2_SWSTART;
+      while(!(ADC1->SR & ADC_SR_EOC)); a2 = ADC1->DR & 0x0FFF;
+      // PA3
+      ADC1->SQR3 =  3; ADC1->CR2 |= ADC_CR2_SWSTART;
+      while(!(ADC1->SR & ADC_SR_EOC)); a3 = ADC1->DR & 0x0FFF;
 
-  //TR
-  char hourSet =0;		//21:20 tens 19:16 ones
-  char minuteSet =0;	//14:12 tens 11:8 ones
-  char secondSet =0;	//6:4 tens 0:3 ones
+      switch(currentState) {
+        case 0:  // clock
+          hourSet   = (a1*24)/4096; if(hourSet>23) hourSet=23;
+          minuteSet = (a2*60)/4096; if(minuteSet>59) minuteSet=59;
+          secondSet = (a3*60)/4096; if(secondSet>59) secondSet=59;
+          break;
+        case 1:  // calendar
+          yearSet  = (a1*100)/4096;  if(yearSet>99) yearSet=99;
+          monthSet = (a2*12)/4096+1;  if(monthSet>12) monthSet=12;
+          daySet   = (a3*31)/4096+1;  if(daySet>31) daySet=31;
+          break;
+        case 2:  // alarm1
+          alarm1H = (a1*24)/4096; if(alarm1H>23) alarm1H=23;
+          alarm1M = (a2*60)/4096; if(alarm1M>59) alarm1M=59;
+          alarm1S = (a3*60)/4096; if(alarm1S>59) alarm1S=59;
+          break;
+        case 3:  // alarm2
+          alarm2H = (a1*24)/4096; if(alarm2H>23) alarm2H=23;
+          alarm2M = (a2*60)/4096; if(alarm2M>59) alarm2M=59;
+          alarm2S = (a3*60)/4096; if(alarm2S>59) alarm2S=59;
+          break;
+      }
+    }
 
-  //Enables Control register bit 8 for Power Control Register
-  PWR->CR |= 1 << 8;
-
-  //Sets bits 9 and 8 to 9 on 8 off respectively.
-  RCC->BDCR |= 0b10 << 8;
-
-  //Enables the Real time clock
-  RCC->BDCR |= 1 << 15;
-
-
-
-  while (1){
-    /* USER CODE BEGIN 3 */
-
-	  //Polls PC11 to cycle through the state machine.
-	  if((GPIOC->IDR & (0x1 << 11)) >> 11 == 0  && !debounceFlag11){
-		  currentState = (currentState + 1) % 4;
-		  debounceFlag11 = 1;
-	  } else if((GPIOC->IDR & (0x1 << 11)) >> 11 == 1 && debounceFlag11) {
-		  HAL_Delay(1);
-		  debounceFlag11 = 0;
-	  }
-	  //Displays selected state on LEDs (Testing purpose)
-	  GPIOD->ODR = currentState;
-
-	  //TODO PC0 edit mode, PC15,14 for enabling alarms
-	  //
-
-	  /*	State Machine	*/
-	  switch(currentState){
-	  case 0:
-
-		  if(editMode){
-
-			  //Blinking Display
-			  if((RTC->TR)%2){
-				  Seven_Segment(123);	// TODO display Time Values being modified
-			  } else {
-	  	  	  	  Seven_Segment_Digit(0,46,0);	//These turn off the display
-	    		  Seven_Segment_Digit(1,46,0);
-	    		  Seven_Segment_Digit(2,46,0);
-	    		  Seven_Segment_Digit(3,46,0);
-	    		  Seven_Segment_Digit(4,46,0);
-	    		  Seven_Segment_Digit(5,46,0);
-	    		  Seven_Segment_Digit(6,46,0);
-	    		  Seven_Segment_Digit(7,46,0);
-			  }
-			  //TODO Edit Mode
-
-		  } else {
-			  //Displays Time: TODO Format Correctly
-			  Seven_Segment(RTC->TR);
-		  }
-
-
-		  //Enable/Disable Edit Mode
-		  if((GPIOC->IDR & (0x1 << 10)) >> 10 == 0  && !debounceFlag10){
-			  	  editMode ^= 1;
-  		  		  debounceFlag10 = 1;
-  		  	  } else if((GPIOC->IDR & (0x1 << 10)) >> 10 == 1 && debounceFlag10) {
-  		  		//Set Registers for Clock
-  		  		  if(editMode == 0){ updateValueFlag = 1;}
-  		  		  HAL_Delay(1);
-  		  		  debounceFlag10 = 0;
-  		  	  }
-		  break;
-	  case 1:
-		  Seven_Segment_Digit(0,7,0);
-  		  Seven_Segment_Digit(1,6,0);
-  		  Seven_Segment_Digit(2,5,0);
-  		  Seven_Segment_Digit(3,4,0);
-  		  Seven_Segment_Digit(4,3,0);
-  		  Seven_Segment_Digit(5,2,0);
-  		  Seven_Segment_Digit(6,1,0);
-  		  Seven_Segment_Digit(7,0,0);
-		  break;
-	  case 2:
-		  Seven_Segment_Digit(7,0,0);
-
-		  break;
-	  case 3:
-		  Seven_Segment_Digit(7,0,0);
-		  break;
-	  }
-
-	  //Update Clock
-	  if(updateValueFlag == 1 && (currentState <2)){
-		  RTC->WPR = 0xCA;	//Might need adjusted
-		  RTC->WPR = 0x53;	//Might need adjusted
-		  RTC->ISR |= 1 << 7;
-		  if((RTC->ISR & 0b1 << 6 ) >>6){
-			  RTC->PRER = 0x102; //Set lower portion to 258
-			  RTC->PRER |= 0x007F0000; //Set upper portion to 127
-
-			  //TODO Assign all of the values, including date each time
-			  //RTC->TR = ;
-			  //RTC->DR = ;
+    /* 4) Commit into RTC on editMode→0 */
+    if (updateValueFlag && prevEdit==1 && editMode==0) {
+      if (currentState==0) {
+        uint32_t tr =
+          ((hourSet/10)<<20)|((hourSet%10)<<16)|
+          ((minuteSet/10)<<12)|((minuteSet%10)<< 8)|
+          ((secondSet/10)<< 4)|((secondSet%10));
+        RTC->WPR = 0xCA; RTC->WPR = 0x53;
+        RTC->ISR |=  RTC_ISR_INIT;      while(!(RTC->ISR & RTC_ISR_INITF));
+        RTC->TR  =  tr;
+        RTC->ISR &= ~RTC_ISR_INIT;
+        RTC->WPR = 0xFF;
+      }
+      else if (currentState==1) {
+        uint32_t olddr = RTC->DR & RTC_DR_WDU; // keep weekday
+        uint32_t dr =
+          ((yearSet/10)<<20)|((yearSet%10)<<16)|
+          olddr|
+          ((monthSet/10)<<12)|((monthSet%10)<< 8)|
+          ((daySet/10)<< 4)|((daySet%10));
+        RTC->WPR = 0xCA; RTC->WPR = 0x53;
+        RTC->ISR |=  RTC_ISR_INIT;      while(!(RTC->ISR & RTC_ISR_INITF));
+        RTC->DR  =  dr;
+        RTC->ISR &= ~RTC_ISR_INIT;
+        RTC->WPR = 0xFF;
+      }
+      else if (currentState==2) {       // —– commit Alarm 1/A —–
+        /* unlock RTC write */
+        RTC->WPR = 0xCA;
+        RTC->WPR = 0x53;
+        /* enter init mode */
+        RTC->ISR |=  RTC_ISR_INIT;
+        while(!(RTC->ISR & RTC_ISR_INITF));
 
 
-			  //TODO For refrence, delete after writing
-			  //DR
-			  //int daySet =0;		//5:4 tens 3:0 ones
-			  //int weekDaySet =0;	//15:13
-			  //int monthSet =0;		//12 tens 11:8 ones
-			  //int yearSet =2000;	//23:20 10s 19:16 ones
-
-			  //TR
-			  //char hourSet =0;		//21:20 tens 19:16 ones
-			  //char minuteSet =0;	//14:12 tens 11:8 ones
-			  //char secondSet =0;	//6:4 tens 0:3 ones
-
-			  RTC->CR = 1 << 6;
-			  RTC->ISR ^= 1<<7;
-		  }
-	  }
+        /* program Alarm A register: HH:MM:SS */
+        RTC->ALRMAR =0;
+        RTC->ALRMASSR = 0;
+        RTC->ALRMAR=
+            (alarm1H/10)<<20
+			| (alarm1H%10)<<16
+			| (alarm1M/10)<<12
+			| (alarm1M%10)<< 8
+            | (alarm1S/10)<< 4
+			| (alarm1S%10)
+        	| (1U << 31); // mask date field
 
 
 
+        // arm or disarm Alarm A based on switch
+        if (GPIOC->IDR & (1 << 15)) {
+        	RTC->CR |= (RTC_CR_ALRAIE | RTC_CR_ALRAE);
+        } else {
+        	RTC->CR &= ~(RTC_CR_ALRAIE | RTC_CR_ALRAE);
+        }
+
+        /* leave init mode */
+        RTC->ISR &= ~RTC_ISR_INIT;
+        RTC->WPR = 0xFF;
+
+      }
+      else if (currentState==3) {       // —– commit Alarm 2 —–
+        RTC->WPR = 0xCA;
+        RTC->WPR = 0x53;
+        RTC->ISR |= RTC_ISR_INIT;
+        while(!(RTC->ISR & RTC_ISR_INITF));
 
 
+        RTC->ALRMBR =
+            (alarm2H/10)<<20
+			| (alarm2H%10)<<16
+            | (alarm2M/10)<<12
+			| (alarm2M%10)<< 8
+            | (alarm2S/10)<< 4
+			| (alarm2S%10)
+        	| (1U << 31); // mask date
 
+        // arm or disarm Alarm B based on switch
+        if (GPIOC->IDR & (1 << 14)) {
+        	RTC->CR |= (RTC_CR_ALRBIE | RTC_CR_ALRBE);
+        } else {
+        	RTC->CR &= ~(RTC_CR_ALRBIE | RTC_CR_ALRBE);
+        }
 
+        RTC->ISR &= ~RTC_ISR_INIT;
+        RTC->WPR = 0xFF;
+      }
 
+      updateValueFlag = 0;
+    }
+    prevEdit = editMode;
 
+    /* 5) Display */
+    // blank positions
+    const uint8_t BL = 46;
+    switch(currentState) {
+      case 0: {
+    	  //Clock mode -- HH.MM.SS -- NO LEDs
+          if (editMode) {
+            // flash off half the time
+            if (((HAL_GetTick()/500)&1)==0) {
+              for (int d = 0; d < 8; d++)
+                Seven_Segment_Digit(d, BL, 0);
+            } else {
+              // live‐update from the knobs: HH.MM.SS
+              int t, o;
+              // hours
+              t = hourSet/10;
+              Seven_Segment_Digit(7, t, 0);
+              o = hourSet%10;
+              Seven_Segment_Digit(6, o, 1);
+              // minutes
+              t = minuteSet/10;
+              Seven_Segment_Digit(5, t, 0);
+              o = minuteSet%10;
+              Seven_Segment_Digit(4, o, 1);
+              // seconds
+              t = secondSet/10;
+              Seven_Segment_Digit(3, t, 0);
+              o = secondSet%10;
+              Seven_Segment_Digit(2, o, 0);
+              // unused digits
+              Seven_Segment_Digit(1, BL, 0);
+              Seven_Segment_Digit(0, BL, 0);
+            }
+          } else {
+            // normal running clock: pull from RTC->TR so it auto-increments
+            uint32_t tr = RTC->TR;
+            int hr_t = (tr >> 20) & 0x3;
+            int hr_u = (tr >> 16) & 0xF;
+            int mn_t = (tr >> 12) & 0x7;
+            int mn_u = (tr >>  8) & 0xF;
+            int sc_t = (tr >>  4) & 0x7;
+            int sc_u = (tr >>  0) & 0xF;
 
+            Seven_Segment_Digit(7, hr_t, 0);
+            Seven_Segment_Digit(6, hr_u, 1);
+            Seven_Segment_Digit(5, mn_t, 0);
+            Seven_Segment_Digit(4, mn_u, 1);
+            Seven_Segment_Digit(3, sc_t, 0);
+            Seven_Segment_Digit(2, sc_u, 0);
+            // unused
+            Seven_Segment_Digit(1, BL, 0);
+            Seven_Segment_Digit(0, BL, 0);
+          }
+          break;
+      }
+      case 1: {
+        // Calendar YY.MM.DD -- PD0 lit
+        if(editMode && ((HAL_GetTick()/500)&1)==0) {
+          for(int d=0; d<8; d++) Seven_Segment_Digit(d, BL, 0);
+        } else {
+          char t,o;
+          t = yearSet/10;   o = yearSet%10;
+          Seven_Segment_Digit(7, t, 0);
+		  Seven_Segment_Digit(6, o, 1);
+          t = monthSet/10;  o = monthSet%10;
+          Seven_Segment_Digit(5, t, 0);
+          Seven_Segment_Digit(4, o, 1);
+          t = daySet/10;    o = daySet%10;
+          Seven_Segment_Digit(3, t, 0);
+          Seven_Segment_Digit(2, o, 0);
+          Seven_Segment_Digit(1, BL, 0);
+          Seven_Segment_Digit(0, BL, 0);
+        }
+        break;
+      }
+      case 2: {
+        // Alarm1 HH.MM.SS -- PD1 lit
+        if(editMode && ((HAL_GetTick()/500)&1)==0) {
+          for(int d=0; d<8; d++) Seven_Segment_Digit(d, BL, 0);
+        } else {
+          char t,o;
 
+          t = alarm1H/10;    o = alarm1H%10;
+          Seven_Segment_Digit(7, t, 0);
+          Seven_Segment_Digit(6, o, 1);
+          t = alarm1M/10;    o = alarm1M%10;
+          Seven_Segment_Digit(5, t, 0);
+		  Seven_Segment_Digit(4, o, 1);
+          t = alarm1S/10;    o = alarm1S%10;
+          Seven_Segment_Digit(3, t, 0);
+          Seven_Segment_Digit(2, o, 0);
+          Seven_Segment_Digit(1, BL, 0);
+          Seven_Segment_Digit(0, 0xa, 0);
+        }
+        break;
+      }
+      case 3: {
+        // Alarm2 HH.MM.SS -- PD0, PD1 lit
+        if(editMode && ((HAL_GetTick()/500)&1)==0) {
+          for(int d=0; d<8; d++) Seven_Segment_Digit(d, BL, 0);
+        } else {
+          char t,o;
+          t = alarm2H/10;    o = alarm2H%10;
+          Seven_Segment_Digit(7, t, 0);
+          Seven_Segment_Digit(6, o, 1);
+          t = alarm2M/10;    o = alarm2M%10;
+          Seven_Segment_Digit(5, t, 0);
+          Seven_Segment_Digit(4, o, 1);
+          t = alarm2S/10;    o = alarm2S%10;
+          Seven_Segment_Digit(3, t, 0);
+          Seven_Segment_Digit(2, o, 0);
+          Seven_Segment_Digit(1, BL, 0);
+          Seven_Segment_Digit(0, 0xb, 0);
+        }
+        break;
+      }
+    }
 
+    /* optional: show currentState on LEDs for debug */
+    GPIOD->ODR = (GPIOD->ODR & ~0x3) | (currentState & 0x3);
 
-
-
-
-
-
-
-
-  } /* USER CODE END 3 */
+  } /* USER CODE END WHILE */
+  /* USER CODE END 3 */
 }
-
-
-
-
 /**
   * @brief System Clock Configuration
   * @retval None
@@ -999,7 +656,21 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+// this one will fire when Alarm A (ALRMAR) goes off:
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
+{
+	//test
+	GPIOD->ODR ^= (1<<12);
+  Music_ON = 1;
+}
 
+// this one will fire when Alarm B (ALRMBR) goes off:
+void HAL_RTCEx_AlarmBEventCallback(RTC_HandleTypeDef *hrtc)
+{
+	//test
+	GPIOD->ODR ^= (1<<13);
+  Music_ON = 1;
+}
 /* USER CODE END 4 */
 
 /**

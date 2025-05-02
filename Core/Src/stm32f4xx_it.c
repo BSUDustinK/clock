@@ -243,12 +243,29 @@ if (Animate_On > 0)
 void RTC_Alarm_IRQHandler(void)
 {
   /* USER CODE BEGIN RTC_Alarm_IRQn 0 */
-	//TODO Program interupt handler, it runs every .001 seconds
 
-  /* USER CODE END RTC_Alarm_IRQn 0 */
-  HAL_RTC_AlarmIRQHandler(&hrtc);
-  /* USER CODE BEGIN RTC_Alarm_IRQn 1 */
-  	//TODO Program the alarm
+
+  // check Alarm A: //RTC->ISR &
+  if (RTC->ISR & RTC_ISR_ALRAF) {
+    //clear Alarm A flag in RTC
+    RTC->ISR &= ~RTC_ISR_ALRAF;
+    // clear EXTI line 17 pending bit
+    EXTI->PR = (1u << 17);
+    //toggle PD12 so can see alarm fire
+    GPIOD->ODR ^= (1u <<12);
+  }
+  //check Alarm B; //RTC->ISR &
+    if (RTC->ISR & RTC_ISR_ALRBF) {
+      // clear Alarm B flag in RTC
+      RTC->ISR &= ~RTC_ISR_ALRBF;
+      // clear the EXTI line 18 pending bit
+      EXTI->PR = (1u<<18);
+      // toggle PD13 so can see alarm fire
+      GPIOD->ODR ^= (1u << 13);
+    }
+    /* USER CODE END RTC_Alarm_IRQn 0 */
+    	  HAL_RTC_AlarmIRQHandler(&hrtc);
+    /* USER CODE BEGIN RTC_Alarm_IRQn 1 */
 
 
   /* USER CODE END RTC_Alarm_IRQn 1 */
